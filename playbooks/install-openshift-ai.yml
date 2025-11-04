@@ -1,0 +1,8 @@
+---
+# Install only OpenShift AI (assumes GPU operators already installed)
+- name: Install OpenShift AI
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: openshift_ai

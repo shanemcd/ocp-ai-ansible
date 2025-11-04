@@ -1,0 +1,183 @@
+---
+- name: Create NVIDIA GPU Operator namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ gpu_operator_namespace }}"
+        labels:
+          openshift.io/cluster-monitoring: "true"
+
+- name: Create OperatorGroup for NVIDIA GPU Operator
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: nvidia-gpu-operator-group
+        namespace: "{{ gpu_operator_namespace }}"
+      spec:
+        targetNamespaces:
+          - "{{ gpu_operator_namespace }}"
+
+- name: Create Subscription for NVIDIA GPU Operator
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: "{{ gpu_operator_name }}"
+        namespace: "{{ gpu_operator_namespace }}"
+      spec:
+        channel: "{{ gpu_operator_channel }}"
+        name: gpu-operator-certified
+        source: "{{ gpu_operator_source }}"
+        sourceNamespace: "{{ gpu_operator_source_namespace }}"
+        installPlanApproval: Automatic
+
+- name: Wait for GPU Operator to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ gpu_operator_namespace }}"
+    name: gpu-operator
+  register: gpu_operator_deployment
+  until:
+    - gpu_operator_deployment.resources | length > 0
+    - gpu_operator_deployment.resources[0].status.readyReplicas is defined
+    - gpu_operator_deployment.resources[0].status.readyReplicas > 0
+  retries: 30
+  delay: 10
+
+- name: Create ClusterPolicy for GPU configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: nvidia.com/v1
+      kind: ClusterPolicy
+      metadata:
+        name: "{{ gpu_cluster_policy_name }}"
+      spec:
+        operator:
+          defaultRuntime: crio
+          use_ocp_driver_toolkit: true
+          initContainer: {}
+        cdi:
+          enabled: true
+        sandboxWorkloads:
+          enabled: false
+          defaultWorkload: container
+        driver:
+          enabled: true
+          useNvidiaDriverCRD: false
+          kernelModuleType: auto
+          upgradePolicy:
+            autoUpgrade: true
+            drain:
+              deleteEmptyDir: false
+              enable: false
+              force: false
+              timeoutSeconds: 300
+            maxParallelUpgrades: 1
+            maxUnavailable: 25%
+            podDeletion:
+              deleteEmptyDir: false
+              force: false
+              timeoutSeconds: 300
+            waitForCompletion:
+              timeoutSeconds: 0
+          repoConfig:
+            configMapName: ''
+          certConfig:
+            name: ''
+          licensingConfig:
+            nlsEnabled: true
+            secretName: ''
+          virtualTopology:
+            config: ''
+          kernelModuleConfig:
+            name: ''
+        dcgmExporter:
+          enabled: true
+          config:
+            name: ''
+          serviceMonitor:
+            enabled: true
+        dcgm:
+          enabled: true
+        daemonsets:
+          updateStrategy: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: '1'
+        devicePlugin:
+          enabled: true
+          config:
+            name: ''
+            default: ''
+          mps:
+            root: /run/nvidia/mps
+        gfd:
+          enabled: true
+        migManager:
+          enabled: true
+        nodeStatusExporter:
+          enabled: true
+        mig:
+          strategy: single
+        toolkit:
+          enabled: true
+        validator:
+          plugin:
+            env: []
+        vgpuManager:
+          enabled: false
+        vgpuDeviceManager:
+          enabled: true
+        sandboxDevicePlugin:
+          enabled: true
+        vfioManager:
+          enabled: true
+        gds:
+          enabled: false
+        gdrcopy:
+          enabled: false
+
+- name: Wait for GPU driver daemonset to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: apps/v1
+    kind: DaemonSet
+    namespace: "{{ gpu_operator_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/component=nvidia-driver
+  register: gpu_driver_ds
+  until:
+    - gpu_driver_ds.resources | length > 0
+    - gpu_driver_ds.resources[0].status.numberReady is defined
+    - gpu_driver_ds.resources[0].status.numberReady > 0
+  retries: 60
+  delay: 20
+  when: gpu_driver_enabled | bool
+
+- name: Verify GPU resources are available on nodes
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Node
+    label_selectors:
+      - feature.node.kubernetes.io/pci-10de.present=true
+  register: gpu_nodes
+  failed_when: gpu_nodes.resources | length == 0
+
+- name: Display GPU node information
+  ansible.builtin.debug:
+    msg: "Found {{ gpu_nodes.resources | length }} GPU nodes with NVIDIA GPUs"

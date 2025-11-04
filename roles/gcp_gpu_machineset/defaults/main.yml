@@ -1,0 +1,40 @@
+---
+# GCP GPU MachineSet configuration
+#
+# Most values are auto-detected from existing worker MachineSets.
+# You can override any value by setting it in your inventory.
+
+# GPU MachineSet replicas
+gpu_machineset_replicas: 1
+
+# GPU configuration
+gpu_type: nvidia-tesla-t4
+gpu_count: 1
+
+# Machine configuration
+machine_type: n1-standard-4  # T4 requires N1 instance family
+root_volume_size: 128
+root_volume_type: pd-ssd
+
+# Labels
+worker_label: worker
+gpu_label: gpu
+
+# Machine API namespace
+machine_api_namespace: openshift-machine-api
+
+# ==============================================================================
+# Auto-detected values (optional overrides)
+# ==============================================================================
+# The following values are auto-detected from existing worker MachineSets.
+# Uncomment and set in your inventory to override auto-detection:
+#
+# infra_id: my-cluster-abc123
+# gcp_project_id: my-gcp-project
+# gcp_region: us-east4
+# gcp_zone: us-east4-a
+# network_name: my-cluster-abc123-network
+# subnet_name: my-cluster-abc123-worker-subnet
+# service_account_email: my-cluster-abc123-w@my-gcp-project.iam.gserviceaccount.com
+# rhcos_image: projects/rhcos-cloud/global/images/rhcos-9-6-20250826-1-gcp-x86-64
+# gpu_machineset_name: my-cluster-abc123-gpu-worker-us-east4-a

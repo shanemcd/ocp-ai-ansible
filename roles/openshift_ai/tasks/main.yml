@@ -1,0 +1,186 @@
+---
+- name: Create OpenShift AI operator namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ openshift_ai_namespace }}"
+        labels:
+          openshift.io/cluster-monitoring: "true"
+
+- name: Create OperatorGroup for OpenShift AI
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: rhods-operator
+        namespace: "{{ openshift_ai_namespace }}"
+      spec: {}
+
+- name: Create Subscription for OpenShift AI Operator
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: "{{ openshift_ai_operator_name }}"
+        namespace: "{{ openshift_ai_namespace }}"
+      spec:
+        channel: "{{ openshift_ai_channel }}"
+        name: rhods-operator
+        source: "{{ openshift_ai_source }}"
+        sourceNamespace: "{{ openshift_ai_source_namespace }}"
+        installPlanApproval: Automatic
+
+- name: Wait for OpenShift AI Operator to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ openshift_ai_namespace }}"
+    label_selectors:
+      - name=rhods-operator
+  register: rhods_operator_deployment
+  until:
+    - rhods_operator_deployment.resources | length > 0
+    - rhods_operator_deployment.resources[0].status.readyReplicas is defined
+    - rhods_operator_deployment.resources[0].status.readyReplicas > 0
+  retries: 30
+  delay: 10
+
+- name: Wait for DSCInitialization to be created
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: dscinitialization.opendatahub.io/v1
+    kind: DSCInitialization
+    name: default-dsci
+  register: dsci_status
+  until:
+    - dsci_status.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Configure DSCInitialization for Standard deployment mode
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: dscinitialization.opendatahub.io/v1
+      kind: DSCInitialization
+      metadata:
+        name: default-dsci
+      spec:
+        applicationsNamespace: redhat-ods-applications
+        serviceMesh:
+          controlPlane:
+            metricsCollection: Istio
+            name: data-science-smcp
+            namespace: istio-system
+          managementState: Removed
+
+- name: Create DataScienceCluster instance with KServe (Standard deployment mode)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: datasciencecluster.opendatahub.io/v1
+      kind: DataScienceCluster
+      metadata:
+        name: "{{ dsc_name }}"
+      spec:
+        components:
+          codeflare:
+            managementState: Managed
+          dashboard:
+            managementState: Managed
+          datasciencepipelines:
+            managementState: Managed
+          feastoperator:
+            managementState: Removed
+          kserve:
+            managementState: Managed
+            defaultDeploymentMode: RawDeployment
+            rawDeploymentServiceConfig: Headed
+            serving:
+              managementState: Removed
+              name: knative-serving
+          kueue:
+            managementState: Managed
+          llamastackoperator:
+            managementState: Removed
+          modelmeshserving:
+            managementState: Managed
+          modelregistry:
+            managementState: Managed
+            registriesNamespace: rhoai-model-registries
+          ray:
+            managementState: Managed
+          trainingoperator:
+            managementState: Managed
+          trustyai:
+            managementState: Managed
+          workbenches:
+            managementState: Managed
+
+- name: Wait for DataScienceCluster to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: datasciencecluster.opendatahub.io/v1
+    kind: DataScienceCluster
+    name: "{{ dsc_name }}"
+  register: dsc_status
+  until:
+    - dsc_status.resources | length > 0
+    - dsc_status.resources[0].status is defined
+    - dsc_status.resources[0].status.phase is defined
+    - dsc_status.resources[0].status.phase == "Ready"
+  retries: 60
+  delay: 20
+
+- name: Verify OpenShift AI dashboard is accessible
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Route
+    namespace: "{{ dsc_namespace }}"
+    name: rhods-dashboard
+  register: dashboard_route
+  when: enable_dashboard | bool
+
+- name: Display OpenShift AI dashboard URL
+  ansible.builtin.debug:
+    msg: "OpenShift AI Dashboard: https://{{ dashboard_route.resources[0].spec.host }}"
+  when:
+    - enable_dashboard | bool
+    - dashboard_route.resources | length > 0
+
+- name: Verify KServe controller is running
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ dsc_namespace }}"
+    label_selectors:
+      - control-plane=kserve-controller-manager
+  register: kserve_pods
+  until:
+    - kserve_pods.resources | length > 0
+    - kserve_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+  retries: 60
+  delay: 20
+
+- name: Display OpenShift AI installation summary
+  ansible.builtin.debug:
+    msg:
+      - "OpenShift AI installation complete!"
+      - "Deployment Mode: Standard (RawDeployment)"
+      - "Dashboard: https://{{ dashboard_route.resources[0].spec.host if (enable_dashboard and dashboard_route.resources | length > 0) else 'N/A' }}"
+      - "KServe pods: {{ kserve_pods.resources | length }}"

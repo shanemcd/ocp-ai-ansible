@@ -1,0 +1,94 @@
+---
+# Example inventory file for OpenShift AI installation
+# Copy this file to your cluster directory and customize the variables
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+  vars:
+    # =============================================================================
+    # REQUIRED: Cluster Configuration
+    # =============================================================================
+
+    # Path to your OpenShift cluster kubeconfig file
+    # This file contains authentication credentials for your cluster
+    kubeconfig_path: /path/to/your/kubeconfig
+
+    # =============================================================================
+    # OpenShift AI Configuration
+    # =============================================================================
+
+    # Namespace where OpenShift AI operator will be installed
+    openshift_ai_namespace: redhat-ods-operator
+
+    # OpenShift AI operator channel (stable, fast, etc.)
+    openshift_ai_channel: stable
+
+    # Catalog source for OpenShift AI operator
+    # Use 'redhat-operators' for official Red Hat catalogs
+    # Use 'community-operators' for community catalogs
+    openshift_ai_source: redhat-operators
+    openshift_ai_source_namespace: openshift-marketplace
+
+    # OpenShift AI operator name
+    openshift_ai_operator_name: rhods-operator
+
+    # DataScienceCluster name
+    dsc_name: default-dsc
+
+    # Namespace for OpenShift AI applications
+    dsc_namespace: redhat-ods-applications
+
+    # Enable dashboard
+    enable_dashboard: true
+
+    # =============================================================================
+    # GPU Configuration (for GCP clusters)
+    # =============================================================================
+
+    # Namespace for GPU operator
+    gpu_operator_namespace: nvidia-gpu-operator
+
+    # Namespace for Node Feature Discovery
+    nfd_namespace: openshift-nfd
+
+    # GPU operator settings
+    gpu_driver_enabled: true
+    gpu_cluster_policy_name: gpu-cluster-policy
+
+    # =============================================================================
+    # GCP GPU MachineSet Configuration
+    # Required only if creating GPU nodes on GCP
+    # =============================================================================
+    # Most GCP configuration is auto-detected from existing worker MachineSets.
+    # You only need to specify GPU-specific settings:
+
+    # GPU type and count (required)
+    gpu_type: nvidia-tesla-t4
+    gpu_count: 1
+
+    # Machine type for GPU nodes (required)
+    machine_type: n1-standard-4
+
+    # Number of GPU worker nodes to create
+    gpu_machineset_replicas: 1
+
+    # Root volume configuration (optional, defaults shown)
+    # root_volume_size: 128
+    # root_volume_type: pd-ssd
+
+    # =============================================================================
+    # Optional GCP Overrides (auto-detected if not specified)
+    # =============================================================================
+    # Uncomment to override auto-detected values from cluster:
+    #
+    # gcp_project_id: my-gcp-project
+    # gcp_region: us-east4
+    # gcp_zone: us-east4-a
+    # network_name: my-cluster-abc123-network
+    # subnet_name: my-cluster-abc123-worker-subnet
+    # service_account_email: my-cluster-abc123-w@my-gcp-project.iam.gserviceaccount.com
+    # rhcos_image: projects/rhcos-cloud/global/images/rhcos-9-6-20250826-1-gcp-x86-64

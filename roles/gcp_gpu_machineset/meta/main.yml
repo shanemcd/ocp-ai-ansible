@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: gcp_gpu_machineset
+  author: Ansible Automation
+  description: Create GCP MachineSet with NVIDIA T4 GPU
+  company: Red Hat
+  license: Apache-2.0
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+
+  galaxy_tags:
+    - openshift
+    - kubernetes
+    - gpu
+    - gcp
+    - machineset
+
+dependencies: []

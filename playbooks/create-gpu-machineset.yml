@@ -1,0 +1,8 @@
+---
+# Create GPU-enabled MachineSet on GCP
+- name: Create GCP GPU MachineSet
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: gcp_gpu_machineset

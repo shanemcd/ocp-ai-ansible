@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: nvidia_gpu_operator
+  author: Ansible Automation
+  description: Install and configure NVIDIA GPU Operator
+  company: Red Hat
+  license: Apache-2.0
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+
+  galaxy_tags:
+    - openshift
+    - kubernetes
+    - gpu
+    - nvidia
+
+dependencies:
+  - role: node_feature_discovery

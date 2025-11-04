@@ -1,0 +1,24 @@
+---
+# NVIDIA GPU Operator configuration
+gpu_operator_namespace: nvidia-gpu-operator
+gpu_operator_name: gpu-operator-certified
+gpu_operator_channel: stable
+gpu_operator_source: certified-operators
+gpu_operator_source_namespace: openshift-marketplace
+
+# ClusterPolicy configuration
+gpu_cluster_policy_name: gpu-cluster-policy
+gpu_driver_enabled: true
+gpu_toolkit_enabled: true
+gpu_device_plugin_enabled: true
+gpu_dcgm_enabled: true
+gpu_dcgm_exporter_enabled: true
+gpu_node_status_exporter_enabled: true
+gpu_mig_manager_enabled: false
+
+# NVIDIA driver configuration
+nvidia_driver_version: latest
+nvidia_driver_repository: nvidia/driver
+
+# GPU Feature Discovery
+gpu_gfd_enabled: true

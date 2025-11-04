@@ -1,0 +1,23 @@
+---
+# Complete installation of OpenShift AI with GPU support
+- name: Install Node Feature Discovery and GPU Operator
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: node_feature_discovery
+    - role: nvidia_gpu_operator
+
+- name: Create GPU MachineSet
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: gcp_gpu_machineset
+
+- name: Install OpenShift AI
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: openshift_ai

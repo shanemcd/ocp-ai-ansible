@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: openshift_ai
+  author: Ansible Automation
+  description: Install and configure OpenShift AI (RHOAI)
+  company: Red Hat
+  license: Apache-2.0
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+
+  galaxy_tags:
+    - openshift
+    - kubernetes
+    - ai
+    - ml
+    - datascience
+
+dependencies: []

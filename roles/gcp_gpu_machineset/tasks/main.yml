@@ -1,0 +1,155 @@
+---
+# Auto-detect cluster configuration from existing worker MachineSets
+- name: Get all MachineSets for auto-discovery
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: "{{ machine_api_namespace }}"
+  register: all_machinesets
+
+- name: Filter for non-GPU worker MachineSets
+  ansible.builtin.set_fact:
+    existing_machinesets: "{{ all_machinesets.resources | rejectattr('metadata.name', 'search', 'gpu') | list }}"
+
+- name: Fail if no existing worker MachineSet found
+  ansible.builtin.fail:
+    msg: "No existing worker MachineSet found. Cannot auto-detect cluster configuration."
+  when: existing_machinesets | length == 0
+
+- name: Select first non-GPU worker MachineSet for reference
+  ansible.builtin.set_fact:
+    reference_machineset: "{{ existing_machinesets | selectattr('spec.template.spec.providerSpec.value.gpus', 'undefined') | first }}"
+  when: existing_machinesets | selectattr('spec.template.spec.providerSpec.value.gpus', 'undefined') | list | length > 0
+
+- name: Fallback to first MachineSet if no non-GPU MachineSet found
+  ansible.builtin.set_fact:
+    reference_machineset: "{{ existing_machinesets[0] }}"
+  when: reference_machineset is not defined
+
+- name: Extract provider spec from reference MachineSet
+  ansible.builtin.set_fact:
+    reference_provider_spec: "{{ reference_machineset.spec.template.spec.providerSpec.value }}"
+
+- name: Auto-detect infrastructure ID from MachineSet labels
+  ansible.builtin.set_fact:
+    infra_id_detected: "{{ reference_machineset.metadata.labels['machine.openshift.io/cluster-api-cluster'] }}"
+
+- name: Set infra_id (use custom value if provided, otherwise auto-detected)
+  ansible.builtin.set_fact:
+    infra_id: "{{ infra_id | default(infra_id_detected) }}"
+
+- name: Auto-detect GCP configuration from reference MachineSet
+  ansible.builtin.set_fact:
+    gcp_project_id_detected: "{{ reference_provider_spec.projectID }}"
+    gcp_region_detected: "{{ reference_provider_spec.region }}"
+    gcp_zone_detected: "{{ reference_provider_spec.zone }}"
+    network_name_detected: "{{ reference_provider_spec.networkInterfaces[0].network }}"
+    subnet_name_detected: "{{ reference_provider_spec.networkInterfaces[0].subnetwork }}"
+    service_account_email_detected: "{{ reference_provider_spec.serviceAccounts[0].email }}"
+    rhcos_image_detected: "{{ reference_provider_spec.disks[0].image }}"
+    worker_tags_detected: "{{ reference_provider_spec.tags }}"
+
+- name: Set GCP variables (use custom values if provided, otherwise auto-detected)
+  ansible.builtin.set_fact:
+    gcp_project_id: "{{ gcp_project_id | default(gcp_project_id_detected) }}"
+    gcp_region: "{{ gcp_region | default(gcp_region_detected) }}"
+    gcp_zone: "{{ gcp_zone | default(gcp_zone_detected) }}"
+    network_name: "{{ network_name | default(network_name_detected) }}"
+    subnet_name: "{{ subnet_name | default(subnet_name_detected) }}"
+    service_account_email: "{{ service_account_email | default(service_account_email_detected) }}"
+    rhcos_image: "{{ rhcos_image | default(rhcos_image_detected) }}"
+
+- name: Set GPU MachineSet name
+  ansible.builtin.set_fact:
+    gpu_machineset_name: "{{ gpu_machineset_name | default(infra_id + '-gpu-worker-' + gcp_zone) }}"
+
+- name: Display auto-detected configuration
+  ansible.builtin.debug:
+    msg:
+      - "Auto-detected cluster configuration:"
+      - "  Infrastructure ID: {{ infra_id }}"
+      - "  GCP Project: {{ gcp_project_id }}"
+      - "  Region: {{ gcp_region }}"
+      - "  Zone: {{ gcp_zone }}"
+      - "  Network: {{ network_name }}"
+      - "  Subnet: {{ subnet_name }}"
+      - "  Service Account: {{ service_account_email }}"
+      - "  RHCOS Image: {{ rhcos_image }}"
+      - ""
+      - "GPU MachineSet configuration:"
+      - "  Name: {{ gpu_machineset_name }}"
+      - "  Replicas: {{ gpu_machineset_replicas }}"
+      - "  Machine Type: {{ machine_type }}"
+      - "  GPU Type: {{ gpu_type }}"
+      - "  GPU Count: {{ gpu_count }}"
+      - "  Root Volume: {{ root_volume_size }}GB {{ root_volume_type }}"
+
+- name: Create GPU MachineSet
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition: "{{ lookup('template', 'machineset.yml.j2') | from_yaml }}"
+
+- name: Wait for MachineSet to be created
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: "{{ machine_api_namespace }}"
+    name: "{{ gpu_machineset_name }}"
+  register: gpu_machineset
+  until:
+    - gpu_machineset.resources | length > 0
+  retries: 10
+  delay: 5
+
+- name: Wait for Machine to be created
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: machine.openshift.io/v1beta1
+    kind: Machine
+    namespace: "{{ machine_api_namespace }}"
+    label_selectors:
+      - "machine.openshift.io/cluster-api-machineset={{ gpu_machineset_name }}"
+  register: gpu_machines
+  until:
+    - gpu_machines.resources | length >= gpu_machineset_replicas | int
+  retries: 30
+  delay: 10
+
+- name: Extract node names from Machines
+  ansible.builtin.set_fact:
+    gpu_node_names: "{{ gpu_machines.resources | selectattr('status.nodeRef', 'defined') | map(attribute='status.nodeRef.name') | list }}"
+
+- name: Wait for GPU nodes to become Ready with GPU resources
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Node
+    name: "{{ item }}"
+  register: gpu_node_info
+  loop: "{{ gpu_node_names }}"
+  until:
+    - gpu_node_info.resources | length > 0
+    - gpu_node_info.resources[0].status.conditions is defined
+    - gpu_node_info.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+    - gpu_node_info.resources[0].status.capacity is defined
+    - gpu_node_info.resources[0].status.capacity | dict2items | selectattr('key', 'equalto', 'nvidia.com/gpu') | list | length > 0
+  retries: 60
+  delay: 20
+  when: gpu_node_names | length > 0
+
+- name: Set gpu_nodes fact for display
+  ansible.builtin.set_fact:
+    gpu_nodes:
+      resources: "{{ gpu_node_info.results | map(attribute='resources') | flatten }}"
+  when: gpu_node_names | length > 0
+
+- name: Display GPU node information
+  ansible.builtin.debug:
+    msg:
+      - "GPU MachineSet created successfully!"
+      - "GPU Nodes: {{ gpu_nodes.resources | map(attribute='metadata.name') | list }}"
+      - "Machine Type: {{ machine_type }}"
+      - "GPU Type: {{ gpu_type }} ({{ gpu_count }}x)"

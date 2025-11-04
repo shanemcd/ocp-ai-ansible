@@ -1,0 +1,27 @@
+---
+# OpenShift AI Operator configuration
+openshift_ai_namespace: redhat-ods-operator
+openshift_ai_operator_name: rhods-operator
+openshift_ai_channel: stable
+openshift_ai_source: redhat-operators
+openshift_ai_source_namespace: openshift-marketplace
+
+# DataScienceCluster configuration
+dsc_name: default-dsc
+dsc_namespace: redhat-ods-applications
+
+# Component configuration
+enable_dashboard: true
+enable_workbenches: true
+enable_data_science_pipelines: true
+enable_model_serving: true
+enable_kserve: false  # Requires additional operators
+enable_model_mesh: true
+enable_code_flare: true
+enable_ray: true
+enable_trustyai: false
+enable_kueue: true
+
+# Monitoring configuration
+enable_monitoring: true
+monitoring_namespace: redhat-ods-monitoring

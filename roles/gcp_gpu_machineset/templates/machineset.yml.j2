@@ -1,0 +1,62 @@
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  name: "{{ gpu_machineset_name }}"
+  namespace: "{{ machine_api_namespace }}"
+  annotations:
+    capacity.cluster-autoscaler.kubernetes.io/labels: kubernetes.io/arch=amd64
+    machine.openshift.io/GPU: "{{ gpu_count }}"
+    machine.openshift.io/vCPU: "4"
+  labels:
+    machine.openshift.io/cluster-api-cluster: "{{ infra_id }}"
+spec:
+  replicas: {{ gpu_machineset_replicas }}
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: "{{ infra_id }}"
+      machine.openshift.io/cluster-api-machineset: "{{ gpu_machineset_name }}"
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: "{{ infra_id }}"
+        machine.openshift.io/cluster-api-machine-role: "{{ worker_label }}"
+        machine.openshift.io/cluster-api-machine-type: "{{ worker_label }}"
+        machine.openshift.io/cluster-api-machineset: "{{ gpu_machineset_name }}"
+        node-role.kubernetes.io/gpu: ""
+    spec:
+      providerSpec:
+        value:
+          apiVersion: machine.openshift.io/v1beta1
+          kind: GCPMachineProviderSpec
+          projectID: "{{ gcp_project_id }}"
+          region: "{{ gcp_region }}"
+          zone: "{{ gcp_zone }}"
+          machineType: "{{ machine_type }}"
+          onHostMaintenance: Terminate
+          restartPolicy: Always
+          canIPForward: false
+          deletionProtection: false
+          credentialsSecret:
+            name: gcp-cloud-credentials
+          userDataSecret:
+            name: worker-user-data
+          networkInterfaces:
+            - network: "{{ network_name }}"
+              subnetwork: "{{ subnet_name }}"
+          serviceAccounts:
+            - email: "{{ service_account_email }}"
+              scopes:
+                - https://www.googleapis.com/auth/cloud-platform
+          disks:
+            - autoDelete: true
+              boot: true
+              image: "{{ rhcos_image }}"
+              sizeGb: {{ root_volume_size }}
+              type: "{{ root_volume_type }}"
+          gpus:
+            - count: {{ gpu_count }}
+              type: "{{ gpu_type }}"
+          shieldedInstanceConfig: {}
+          tags:
+            - "{{ infra_id }}-worker"

@@ -1,0 +1,8 @@
+---
+# Install only Node Feature Discovery
+- name: Install Node Feature Discovery Operator
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: node_feature_discovery

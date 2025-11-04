@@ -1,0 +1,22 @@
+---
+# Node Feature Discovery Operator configuration
+nfd_namespace: openshift-nfd
+nfd_operator_name: nfd
+nfd_channel: stable
+nfd_source: redhat-operators
+nfd_source_namespace: openshift-marketplace
+
+# Instance configuration
+nfd_instance_name: nfd-instance
+nfd_worker_config:
+  configData: |
+    core:
+      sleepInterval: 60s
+    sources:
+      pci:
+        deviceClassWhitelist:
+          - "0200"
+          - "03"
+          - "12"
+        deviceLabelFields:
+          - "vendor"

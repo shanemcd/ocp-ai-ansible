@@ -1,0 +1,8 @@
+---
+# Install only NVIDIA GPU Operator (assumes NFD already installed)
+- name: Install NVIDIA GPU Operator
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: nvidia_gpu_operator
