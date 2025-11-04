@@ -93,6 +93,17 @@
           prometheus.io/path: /metrics
           prometheus.io/port: "8080"
 
+- name: Build InferenceService annotations
+  ansible.builtin.set_fact:
+    isvc_annotations:
+      openshift.io/display-name: "{{ model_display_name }}"
+      serving.kserve.io/deploymentMode: RawDeployment
+
+- name: Add auth annotation if enabled
+  ansible.builtin.set_fact:
+    isvc_annotations: "{{ isvc_annotations | combine({'security.opendatahub.io/enable-auth': 'true'}) }}"
+  when: enable_auth | bool
+
 - name: Create InferenceService for model
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
@@ -105,10 +116,7 @@
         namespace: "{{ model_namespace }}"
         labels:
           opendatahub.io/dashboard: "true"
-        annotations:
-          openshift.io/display-name: "{{ model_display_name }}"
-          security.opendatahub.io/enable-auth: "{{ enable_auth | string }}"
-          serving.kserve.io/deploymentMode: RawDeployment
+        annotations: "{{ isvc_annotations }}"
       spec:
         predictor:
           automountServiceAccountToken: false
@@ -130,6 +138,36 @@
                 cpu: "{{ model_cpu_limit }}"
                 memory: "{{ model_memory_limit }}"
                 nvidia.com/gpu: "{{ model_gpu_limit }}"
+
+- name: Create ServiceAccount for model authentication
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: "{{ model_name }}-sa"
+        namespace: "{{ model_namespace }}"
+  when: enable_auth | bool
+
+- name: Create token Secret for ServiceAccount
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ auth_token_name }}-{{ model_name }}-sa"
+        namespace: "{{ model_namespace }}"
+        labels:
+          opendatahub.io/dashboard: "true"
+        annotations:
+          kubernetes.io/service-account.name: "{{ model_name }}-sa"
+          openshift.io/display-name: "{{ auth_token_name }}"
+      type: kubernetes.io/service-account-token
+  when: enable_auth | bool
 
 - name: Wait for InferenceService to be ready
   kubernetes.core.k8s_info:

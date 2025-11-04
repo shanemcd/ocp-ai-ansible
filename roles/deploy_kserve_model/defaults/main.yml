@@ -33,6 +33,7 @@ shm_size: 2Gi
 
 # Authentication
 enable_auth: true
+auth_token_name: "{{ model_name }}"  # Name for the auth token secret
 
 # Tolerations for GPU nodes
 gpu_tolerations:
