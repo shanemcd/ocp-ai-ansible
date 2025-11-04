@@ -92,3 +92,48 @@ all:
     # subnet_name: my-cluster-abc123-worker-subnet
     # service_account_email: my-cluster-abc123-w@my-gcp-project.iam.gserviceaccount.com
     # rhcos_image: projects/rhcos-cloud/global/images/rhcos-9-6-20250826-1-gcp-x86-64
+
+    # =============================================================================
+    # Model Deployment Configuration (Optional)
+    # Required only when deploying models with playbooks/deploy-model.yml
+    # =============================================================================
+
+    # REQUIRED: Namespace where the model will be deployed
+    # model_namespace: models
+
+    # REQUIRED: Model storage URI (OCI image or S3 path)
+    # Examples:
+    #   OCI: oci://registry.redhat.io/rhelai1/modelcar-llama-3-1-8b-instruct-quantized-w4a16:1.5
+    #   S3: s3://my-bucket/models/llama-3-1-8b/
+    # model_storage_uri: oci://registry.redhat.io/rhelai1/modelcar-llama-3-1-8b-instruct-quantized-w4a16:1.5
+
+    # RECOMMENDED: Model name (defaults to "my-model")
+    # model_name: llama-3-1-8b-instruct
+
+    # Optional: Display name for the model (defaults to model_name)
+    # model_display_name: "Llama 3.1 8B Instruct"
+
+    # Model format (vLLM, pytorch, tensorflow, etc.)
+    # model_format: vLLM
+
+    # vLLM Configuration
+    # Maximum context length (reduce if you get OOM errors)
+    # Default model max: 131072 (128K), Recommended for 1 GPU with 8Gi: 32768 (32K)
+    # vllm_max_model_len: 32768
+
+    # Fraction of GPU memory to use (0.0 to 1.0)
+    # vllm_gpu_memory_utilization: 0.9
+
+    # Enable chunked prefill (may cause issues with some models)
+    # vllm_enable_chunked_prefill: false
+
+    # Model Resource Configuration
+    # model_replicas_min: 1
+    # model_replicas_max: 1
+    # model_cpu_request: "1"
+    # model_cpu_limit: "2"
+    # model_memory_request: 4Gi
+    # model_memory_limit: 8Gi
+    # model_gpu_request: 1
+    # model_gpu_limit: 1
+    # shm_size: 2Gi

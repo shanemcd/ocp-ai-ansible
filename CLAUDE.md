@@ -25,6 +25,9 @@ uv run ansible-playbook -i inventory.yml playbooks/install-nfd.yml              
 uv run ansible-playbook -i inventory.yml playbooks/install-nvidia-gpu.yml       # NFD + GPU Operator
 uv run ansible-playbook -i inventory.yml playbooks/create-gpu-machineset.yml    # GPU nodes (GCP)
 uv run ansible-playbook -i inventory.yml playbooks/install-openshift-ai.yml     # OpenShift AI
+
+# Deploy a model with vLLM (uncomment model_* variables in inventory.yml first)
+uv run ansible-playbook -i inventory.yml playbooks/deploy-model.yml             # KServe model deployment
 ```
 
 ### Verification Commands

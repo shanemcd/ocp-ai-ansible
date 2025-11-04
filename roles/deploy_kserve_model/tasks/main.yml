@@ -1,0 +1,168 @@
+---
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - model_namespace is defined
+      - model_namespace | length > 0
+      - model_storage_uri is defined
+      - model_storage_uri | length > 0
+    fail_msg: "Required variables missing. You must set 'model_namespace' and 'model_storage_uri' in your inventory."
+    success_msg: "Required variables validated"
+
+- name: Create namespace for model deployment
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ model_namespace }}"
+
+- name: Build vLLM base arguments list
+  ansible.builtin.set_fact:
+    vllm_args:
+      - "--port=8080"
+      - "--model=/mnt/models"
+      - "--served-model-name={{ '{{.Name}}' }}"
+      - "--max-model-len={{ vllm_max_model_len }}"
+      - "--gpu-memory-utilization={{ vllm_gpu_memory_utilization }}"
+
+- name: Add chunked prefill flag if enabled
+  ansible.builtin.set_fact:
+    vllm_args: "{{ vllm_args + ['--enable-chunked-prefill'] }}"
+  when: vllm_enable_chunked_prefill | bool
+
+- name: Add chunked prefill flag if disabled
+  ansible.builtin.set_fact:
+    vllm_args: "{{ vllm_args + ['--no-enable-chunked-prefill'] }}"
+  when: not (vllm_enable_chunked_prefill | bool)
+
+- name: Add additional vLLM arguments
+  ansible.builtin.set_fact:
+    vllm_args: "{{ vllm_args + vllm_additional_args }}"
+  when: vllm_additional_args | length > 0
+
+- name: Create ServingRuntime for vLLM
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: serving.kserve.io/v1alpha1
+      kind: ServingRuntime
+      metadata:
+        name: "{{ runtime_name }}"
+        namespace: "{{ model_namespace }}"
+        labels:
+          opendatahub.io/dashboard: "true"
+        annotations:
+          opendatahub.io/accelerator-name: migrated-gpu
+          opendatahub.io/apiProtocol: REST
+          opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+          opendatahub.io/template-display-name: vLLM NVIDIA GPU ServingRuntime for KServe
+          opendatahub.io/template-name: vllm-cuda-runtime
+          openshift.io/display-name: "{{ model_display_name }}"
+      spec:
+        multiModel: false
+        supportedModelFormats:
+          - name: "{{ model_format }}"
+            autoSelect: true
+        containers:
+          - name: kserve-container
+            image: "{{ runtime_image }}"
+            command:
+              - python
+              - -m
+              - vllm.entrypoints.openai.api_server
+            args: "{{ vllm_args }}"
+            env:
+              - name: HF_HOME
+                value: /tmp/hf_home
+            ports:
+              - containerPort: 8080
+                protocol: TCP
+            volumeMounts:
+              - name: shm
+                mountPath: /dev/shm
+        volumes:
+          - name: shm
+            emptyDir:
+              medium: Memory
+              sizeLimit: "{{ shm_size }}"
+        annotations:
+          prometheus.io/path: /metrics
+          prometheus.io/port: "8080"
+
+- name: Create InferenceService for model
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: serving.kserve.io/v1beta1
+      kind: InferenceService
+      metadata:
+        name: "{{ model_name }}"
+        namespace: "{{ model_namespace }}"
+        labels:
+          opendatahub.io/dashboard: "true"
+        annotations:
+          openshift.io/display-name: "{{ model_display_name }}"
+          security.opendatahub.io/enable-auth: "{{ enable_auth | string }}"
+          serving.kserve.io/deploymentMode: RawDeployment
+      spec:
+        predictor:
+          automountServiceAccountToken: false
+          minReplicas: "{{ model_replicas_min }}"
+          maxReplicas: "{{ model_replicas_max }}"
+          tolerations: "{{ gpu_tolerations }}"
+          model:
+            modelFormat:
+              name: "{{ model_format }}"
+            name: ""
+            runtime: "{{ runtime_name }}"
+            storageUri: "{{ model_storage_uri }}"
+            resources:
+              requests:
+                cpu: "{{ model_cpu_request }}"
+                memory: "{{ model_memory_request }}"
+                nvidia.com/gpu: "{{ model_gpu_request }}"
+              limits:
+                cpu: "{{ model_cpu_limit }}"
+                memory: "{{ model_memory_limit }}"
+                nvidia.com/gpu: "{{ model_gpu_limit }}"
+
+- name: Wait for InferenceService to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: serving.kserve.io/v1beta1
+    kind: InferenceService
+    name: "{{ model_name }}"
+    namespace: "{{ model_namespace }}"
+  register: inference_service
+  until:
+    - inference_service.resources | length > 0
+    - inference_service.resources[0].status is defined
+    - inference_service.resources[0].status.conditions is defined
+    - inference_service.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+  retries: "{{ wait_retries }}"
+  delay: "{{ wait_delay }}"
+  when: wait_for_ready | bool
+
+- name: Get InferenceService URL
+  ansible.builtin.set_fact:
+    model_url: "{{ inference_service.resources[0].status.url }}"
+  when:
+    - wait_for_ready | bool
+    - inference_service.resources | length > 0
+    - inference_service.resources[0].status.url is defined
+
+- name: Display model deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "Model deployment complete!"
+      - "Model: {{ model_name }}"
+      - "Namespace: {{ model_namespace }}"
+      - "Runtime: {{ model_format }} ({{ runtime_name }})"
+      - "URL: {{ model_url | default('N/A') }}"
+      - "Max Context Length: {{ vllm_max_model_len }}"
+      - "GPU Memory Utilization: {{ vllm_gpu_memory_utilization }}"

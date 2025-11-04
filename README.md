@@ -74,6 +74,10 @@ uv run ansible-playbook -i inventory.yml playbooks/create-gpu-machineset.yml
 
 # Step 4: Install OpenShift AI
 uv run ansible-playbook -i inventory.yml playbooks/install-openshift-ai.yml
+
+# Step 5 (Optional): Deploy a model
+# Uncomment model_* variables in inventory.yml first
+uv run ansible-playbook -i inventory.yml playbooks/deploy-model.yml
 ```
 
 ## Playbooks
@@ -104,6 +108,21 @@ Installs OpenShift AI in Standard deployment mode (RawDeployment). This mode:
 - Does not require Service Mesh or Serverless
 - Simpler setup with fewer dependencies
 - Good for single-tenant environments
+
+### `deploy-model.yml`
+Deploys a KServe model with vLLM runtime. This playbook:
+- Creates a ServingRuntime with optimized vLLM configuration
+- Deploys an InferenceService for the model
+- Automatically configures resource limits and GPU tolerations
+- Waits for the model to be ready
+
+**Configuration**: Uncomment the `model_*` variables in your `inventory.yml` file (see the Model Deployment Configuration section in `examples/inventory.yml.example`).
+
+**Key features**:
+- Automatic context length adjustment to prevent OOM errors
+- GPU memory utilization tuning
+- Support for OCI and S3 model storage
+- Optional authentication
 
 ## Architecture
 

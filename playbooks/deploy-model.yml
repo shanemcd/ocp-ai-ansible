@@ -1,0 +1,8 @@
+---
+# Deploy a KServe model with vLLM runtime
+- name: Deploy KServe Model
+  hosts: localhost
+  gather_facts: false
+
+  roles:
+    - role: deploy_kserve_model
