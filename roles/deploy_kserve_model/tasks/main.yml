@@ -151,6 +151,43 @@
         namespace: "{{ model_namespace }}"
   when: enable_auth | bool
 
+- name: Create Role to allow getting the InferenceService
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: "{{ model_name }}-auth-role"
+        namespace: "{{ model_namespace }}"
+      rules:
+      - apiGroups: ["serving.kserve.io"]
+        resources: ["inferenceservices"]
+        resourceNames: ["{{ model_name }}"]
+        verbs: ["get"]
+  when: enable_auth | bool
+
+- name: Create RoleBinding for ServiceAccount
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: "{{ model_name }}-auth-rolebinding"
+        namespace: "{{ model_namespace }}"
+      subjects:
+      - kind: ServiceAccount
+        name: "{{ model_name }}-sa"
+        namespace: "{{ model_namespace }}"
+      roleRef:
+        kind: Role
+        name: "{{ model_name }}-auth-role"
+        apiGroup: rbac.authorization.k8s.io
+  when: enable_auth | bool
+
 - name: Create token Secret for ServiceAccount
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
@@ -159,13 +196,13 @@
       apiVersion: v1
       kind: Secret
       metadata:
-        name: "{{ auth_token_name }}-{{ model_name }}-sa"
+        name: "{{ model_name }}-sa-token"
         namespace: "{{ model_namespace }}"
         labels:
           opendatahub.io/dashboard: "true"
         annotations:
           kubernetes.io/service-account.name: "{{ model_name }}-sa"
-          openshift.io/display-name: "{{ auth_token_name }}"
+          openshift.io/display-name: "{{ model_name }}"
       type: kubernetes.io/service-account-token
   when: enable_auth | bool
 
@@ -194,6 +231,23 @@
     - inference_service.resources | length > 0
     - inference_service.resources[0].status.url is defined
 
+- name: Get authentication token
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ model_name }}-sa-token"
+    namespace: "{{ model_namespace }}"
+  register: auth_token_secret
+  when: enable_auth | bool
+
+- name: Extract token value
+  ansible.builtin.set_fact:
+    model_auth_token: "{{ auth_token_secret.resources[0].data.token | b64decode }}"
+  when:
+    - enable_auth | bool
+    - auth_token_secret.resources | length > 0
+
 - name: Display model deployment summary
   ansible.builtin.debug:
     msg:
@@ -204,3 +258,6 @@
       - "URL: {{ model_url | default('N/A') }}"
       - "Max Context Length: {{ vllm_max_model_len }}"
       - "GPU Memory Utilization: {{ vllm_gpu_memory_utilization }}"
+      - "Authentication: {{ 'Enabled' if enable_auth else 'Disabled' }}"
+      - "{% if enable_auth %}Token Secret: {{ model_name }}-sa-token{% endif %}"
+      - "{% if enable_auth and model_auth_token is defined %}Auth Token: {{ model_auth_token[:50] }}...{% endif %}"
